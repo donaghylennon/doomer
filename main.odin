@@ -8,8 +8,8 @@ import rl "vendor:raylib"
 win_width  :: 800
 win_height :: 400
 
-grid_cols :: 20
-grid_rows :: 20
+grid_cols :: 10
+grid_rows :: 10
 
 Player :: struct {
     pos: rl.Vector2,
@@ -21,17 +21,36 @@ main :: proc() {
     defer rl.CloseWindow()
     rl.SetTargetFPS(60)
 
-    player :: Player { { 10, 10 }, 0.3 }
+    player := Player { { 5, 5 }, 0.3 }
     world_size :: rl.Vector2 { grid_cols, grid_rows }
-    grid_start :: rl.Vector2 { 10, 10 }
-    grid_end :: rl.Vector2 { 300, 300 }
+    grid_start :: rl.Vector2 { 200, 0 }
+    grid_end :: rl.Vector2 { 600, 400 }
+
+    grid: [grid_rows][grid_cols]bool
+    grid[0][0] = true;
+    grid[1][0] = true;
+    grid[0][1] = true;
 
     for !rl.WindowShouldClose() {
+        if rl.IsKeyPressed(.A) {
+            player.pos.x -= 0.5
+            if player.pos.x < 0 do player.pos.x = 0
+        } else if rl.IsKeyPressed(.D) {
+            player.pos.x += 0.5
+            if player.pos.x > world_size.x do player.pos.x = world_size.x
+        } else if rl.IsKeyPressed(.W) {
+            player.pos.y -= 0.5
+            if player.pos.y < 0 do player.pos.y = 0
+        } else if rl.IsKeyPressed(.S) {
+            player.pos.y += 0.5
+            if player.pos.y > world_size.y do player.pos.y = world_size.y
+        }
+
         rl.BeginDrawing()
             rl.ClearBackground(rl.RAYWHITE)
+            draw_walls(grid_start, grid_end, world_size, grid)
             draw_grid(grid_start, grid_end)
-            rl.DrawCircleV(screen_pos(grid_start, grid_end, world_size, player.pos), player.size/20*(300-10), rl.RED)
-            rl.DrawText("First Window!", 350, 190, 20, rl.LIGHTGRAY)
+            rl.DrawCircleV(screen_pos(grid_start, grid_end, world_size, player.pos), player.size/world_size.x*(grid_end.x-grid_start.x), rl.RED)
             rl.DrawText(rl.TextFormat("%v", rl.GetFPS()), 10, 10, 20, rl.LIGHTGRAY)
         rl.EndDrawing()
     }
@@ -40,6 +59,25 @@ main :: proc() {
 screen_pos :: proc(start_pos, end_pos, world_size, world_pos: rl.Vector2) -> rl.Vector2 {
     screen_lengths := end_pos - start_pos
     return start_pos + world_pos*screen_lengths/world_size
+}
+
+screen_size :: proc(start_pos, end_pos, world_size, size: rl.Vector2) -> rl.Vector2 {
+    screen_lengths := end_pos - start_pos
+    return size*screen_lengths/world_size
+}
+
+draw_walls :: proc(grid_start, grid_end, world_size: rl.Vector2, grid: [grid_rows][grid_cols]bool) {
+    for x in 0..<grid_cols {
+        for y in 0..<grid_rows {
+            if grid[x][y] {
+                cell_start := rl.Vector2{f32(x),f32(y)}
+                cell_end := rl.Vector2{f32(x+1),f32(y+1)}
+                cell_start_screen := screen_pos(grid_start, grid_end, world_size, cell_start)
+                cell_size_screen := screen_size(grid_start, grid_end, world_size, 1)
+                rl.DrawRectangleV(cell_start_screen, cell_size_screen, rl.BLUE)
+            }
+        }
+    }
 }
 
 draw_grid :: proc(start_pos, end_pos: rl.Vector2) {
