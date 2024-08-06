@@ -11,12 +11,13 @@ win_width  :: 1200
 win_height :: 800
 
 grid_cols :: 10
-grid_rows :: 15
+grid_rows :: 10
 
 Player :: struct {
     pos: rl.Vector2,
     size: f32,
-    direction: rl.Vector2
+    direction: rl.Vector2,
+    camera_plane: rl.Vector2
 }
 
 WorldMap :: struct {
@@ -30,7 +31,8 @@ main :: proc() {
     rl.SetTargetFPS(60)
     rl.SetExitKey(.Q)
 
-    player := Player { { 5, 5 }, 0.3, 0 }
+    player := Player { { 5, 5 }, 0.1, { 0, -0.3 }, 0 }
+    player.camera_plane = rl.Vector2Rotate(player.direction, math.PI*0.5)
     world_size :: rl.Vector2 { grid_cols, grid_rows }
     grid_start :: rl.Vector2 { 200, 0 }
     grid_end :: rl.Vector2 { 1000, 800 }
@@ -59,7 +61,12 @@ main :: proc() {
             rl.DrawCircleV(screen_pos(grid_start, grid_end, player.pos, worldmap.size), player.size/f32(worldmap.size.x)*(grid_end.x-grid_start.x), rl.RED)
             rl.DrawCircleV(mouse_pos, 0.3*rl.Vector2Length(grid_end - grid_start)/rl.Vector2Length(worldmap.size), rl.BLUE)
             player_pos := screen_pos(grid_start, grid_end, player.pos, worldmap.size)
-            rl.DrawLineEx(player_pos, mouse_pos, 5, rl.BLUE)
+            player_direction := screen_pos(grid_start, grid_end, player.pos + player.direction, worldmap.size)
+            camera_plane := screen_pos(grid_start, grid_end, player.pos + player.direction + player.camera_plane, worldmap.size)
+            neg_camera_plane := screen_pos(grid_start, grid_end, player.pos + player.direction - player.camera_plane, worldmap.size)
+            rl.DrawLineEx(player_pos, camera_plane, 5, rl.PURPLE)
+            rl.DrawLineEx(player_pos, neg_camera_plane, 5, rl.PURPLE)
+            rl.DrawLineEx(neg_camera_plane, camera_plane, 5, rl.PURPLE)
             rl.DrawText(rl.TextFormat("%v", rl.GetFPS()), 10, 10, 20, rl.LIGHTGRAY)
         rl.EndDrawing()
     }
@@ -112,15 +119,19 @@ draw_grid :: proc(start_pos, end_pos: rl.Vector2) {
 
 handle_input :: proc(player: ^Player, worldmap: WorldMap, dt: f32) {
     world_size: [2]uint = linalg.to_uint(worldmap.size)
-    speed: f32 = 5
+    speed: f32 = 10
+    rot_speed: f32 = 1
     if rl.IsKeyDown(.A) {
-        move_player(player, worldmap, { dt*-speed, 0 })
-    } else if rl.IsKeyDown(.D) {
-        move_player(player, worldmap, { dt*speed, 0 })
-    } else if rl.IsKeyDown(.W) {
-        move_player(player, worldmap, { 0, dt*-speed })
-    } else if rl.IsKeyDown(.S) {
-        move_player(player, worldmap, { 0, dt*speed })
+        rotate_player(player, worldmap, -rot_speed*dt*math.PI)
+    }
+    if rl.IsKeyDown(.D) {
+        rotate_player(player, worldmap, rot_speed*dt*math.PI)
+    }
+    if rl.IsKeyDown(.W) {
+        move_player(player, worldmap, dt*speed*player.direction)
+    }
+    if rl.IsKeyDown(.S) {
+        move_player(player, worldmap, -dt*speed*player.direction)
     }
 }
 
@@ -133,15 +144,18 @@ move_player :: proc(player: ^Player, worldmap: WorldMap, displacement: rl.Vector
         clamp(new_pos.y, 0, worldmap.size.y)
     }
     flp := linalg.floor(new_pos)
-    cell: [2]uint = { uint(math.floor_f32(new_pos.x)), uint(math.floor_f32(new_pos.y)) }
-    if new_pos.x < worldmap.size.x && new_pos.y < worldmap.size.y && worldmap.cells[cell.x][cell.y] && new_pos.x > f32(cell.x) && new_pos.y > f32(cell.y) {
-        return
+    if new_pos.x < worldmap.size.x && new_pos.y < worldmap.size.y {
+        cell: [2]uint = { uint(math.floor_f32(new_pos.x)), uint(math.floor_f32(new_pos.y)) }
+        if worldmap.cells[cell.x][cell.y] {
+            return
+        }
+        player.pos = new_pos
     }
-    player.pos = new_pos
 }
 
 rotate_player :: proc(player: ^Player, worldmap: WorldMap, angle: f32) {
-    player.pos = rl.Vector2Rotate(player.pos, angle)
+    player.direction = rl.Vector2Rotate(player.direction, angle)
+    player.camera_plane = rl.Vector2Rotate(player.camera_plane, angle)
 }
 
 ray_step :: proc(p1, p2: rl.Vector2) -> rl.Vector2 {
