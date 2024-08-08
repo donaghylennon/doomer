@@ -7,8 +7,8 @@ import "core:math"
 import "core:math/linalg"
 import rl "vendor:raylib"
 
-win_width  :: 1200
-win_height :: 800
+win_width  :: 600
+win_height :: 600
 
 grid_cols :: 10
 grid_rows :: 10
@@ -34,12 +34,13 @@ main :: proc() {
     player := Player { { 5, 5 }, 0.1, { 0, -0.3 }, 0 }
     player.camera_plane = rl.Vector2Rotate(player.direction, math.PI*0.5)
     world_size :: rl.Vector2 { grid_cols, grid_rows }
-    grid_start :: rl.Vector2 { 200, 0 }
-    grid_end :: rl.Vector2 { 1000, 800 }
+    grid_start :: rl.Vector2 { 0, 0 }
+    grid_end :: rl.Vector2 { 600, 600 }
 
     worldmap: WorldMap
     worldmap.cells[0][0] = true
     worldmap.cells[1][0] = true
+    worldmap.cells[5][0] = true
     worldmap.cells[0][1] = true
     worldmap.cells[0][grid_rows-1] = true
     worldmap.cells[grid_cols-1][0] = true
@@ -49,8 +50,9 @@ main :: proc() {
         dt := rl.GetFrameTime()
         handle_input(&player, worldmap, dt)
         mouse_pos := rl.GetMousePosition()
+        mouse_world_pos := world_pos(grid_start, grid_end, mouse_pos, world_size)
         if (rl.IsMouseButtonDown(rl.MouseButton.LEFT)) {
-            world_pos := world_pos(grid_start, grid_end, mouse_pos, world_size)
+            world_pos := linalg.to_uint(mouse_world_pos)
             worldmap.cells[world_pos.x][world_pos.y] = true
         }
 
@@ -59,11 +61,15 @@ main :: proc() {
             draw_walls(grid_start, grid_end, worldmap)
             draw_grid(grid_start, grid_end)
             rl.DrawCircleV(screen_pos(grid_start, grid_end, player.pos, worldmap.size), player.size/f32(worldmap.size.x)*(grid_end.x-grid_start.x), rl.RED)
-            rl.DrawCircleV(mouse_pos, 0.3*rl.Vector2Length(grid_end - grid_start)/rl.Vector2Length(worldmap.size), rl.BLUE)
+            rl.DrawCircleV(mouse_pos, 0.1*rl.Vector2Length(grid_end - grid_start)/rl.Vector2Length(worldmap.size), rl.BLUE)
             player_pos := screen_pos(grid_start, grid_end, player.pos, worldmap.size)
             player_direction := screen_pos(grid_start, grid_end, player.pos + player.direction, worldmap.size)
             camera_plane := screen_pos(grid_start, grid_end, player.pos + player.direction + player.camera_plane, worldmap.size)
             neg_camera_plane := screen_pos(grid_start, grid_end, player.pos + player.direction - player.camera_plane, worldmap.size)
+            hit, hit_point := cast_ray_toward_point(player.pos, mouse_world_pos, worldmap)
+            screen_hit_point := screen_pos(grid_start, grid_end, hit_point, world_size)
+            rl.DrawCircleV(screen_hit_point, 5, rl.YELLOW)
+            rl.DrawLineV(player_pos, screen_hit_point, rl.BLACK)
             rl.DrawLineEx(player_pos, camera_plane, 5, rl.PURPLE)
             rl.DrawLineEx(player_pos, neg_camera_plane, 5, rl.PURPLE)
             rl.DrawLineEx(neg_camera_plane, camera_plane, 5, rl.PURPLE)
@@ -82,9 +88,9 @@ screen_size :: proc(start_pos, end_pos, world_size, size: rl.Vector2) -> rl.Vect
     return size*screen_lengths/world_size
 }
 
-world_pos :: proc(start_pos, end_pos, screen_pos, world_size: rl.Vector2) -> [2]uint {
+world_pos :: proc(start_pos, end_pos, screen_pos, world_size: rl.Vector2) -> rl.Vector2 {
     screen_lengths := end_pos - start_pos
-    return linalg.to_uint((screen_pos - start_pos) / screen_lengths * world_size)
+    return (screen_pos - start_pos) / screen_lengths * world_size
 }
 
 draw_walls :: proc(grid_start, grid_end: rl.Vector2, worldmap: WorldMap) {
@@ -160,4 +166,54 @@ rotate_player :: proc(player: ^Player, worldmap: WorldMap, angle: f32) {
 
 ray_step :: proc(p1, p2: rl.Vector2) -> rl.Vector2 {
     return {}
+}
+
+cast_ray_toward_point :: proc(p1, p2: rl.Vector2, worldmap: WorldMap) -> (hit: bool, hit_point: rl.Vector2) {
+    ray_direction := linalg.normalize(p2 - p1)
+    current_cell := linalg.to_int(p1)
+    ray_unit_step_size := rl.Vector2 { math.sqrt(1 + (ray_direction.y / ray_direction.x) * (ray_direction.y / ray_direction.x)),
+                                        math.sqrt(1 + (ray_direction.x / ray_direction.y) * (ray_direction.x / ray_direction.y)) }
+
+    ray_lengths_1D: rl.Vector2
+    step: [2]int
+
+    if ray_direction.x < 0 {
+        step.x = -1
+        ray_lengths_1D.x = (p1.x - f32(current_cell.x)) * ray_unit_step_size.x
+    } else {
+        step.x = 1
+        ray_lengths_1D.x = (f32(current_cell.x + 1) - p1.x) * ray_unit_step_size.x
+    }
+    if ray_direction.y < 0 {
+        step.y = -1
+        ray_lengths_1D.y = (p1.y - f32(current_cell.y)) * ray_unit_step_size.y
+    } else {
+        step.y = 1
+        ray_lengths_1D.y = (f32(current_cell.y + 1) - p1.y) * ray_unit_step_size.y
+    }
+
+    max_distance: f32 = 100
+    distance: f32 = 0
+    hit = false
+    for !hit && distance < max_distance {
+        if ray_lengths_1D.x < ray_lengths_1D.y {
+            current_cell.x += step.x
+            distance = ray_lengths_1D.x
+            ray_lengths_1D.x += ray_unit_step_size.x
+        } else {
+            current_cell.y += step.y
+            distance = ray_lengths_1D.y
+            ray_lengths_1D.y += ray_unit_step_size.y
+        }
+
+        if current_cell.x >= 0 && current_cell.y >= 0 &&
+            current_cell.x < int(worldmap.size.x) && current_cell.y < int(worldmap.size.y) {
+            if worldmap.cells[current_cell.x][current_cell.y] {
+                hit = true
+            }
+        }
+    }
+    
+    hit_point = p1 + ray_direction * distance
+    return hit, hit_point
 }
