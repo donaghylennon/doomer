@@ -7,8 +7,8 @@ import "core:math"
 import "core:math/linalg"
 import rl "vendor:raylib"
 
-win_width  :: 600
-win_height :: 600
+win_width  :: 1200
+win_height :: 800
 
 grid_cols :: 10
 grid_rows :: 10
@@ -35,7 +35,7 @@ main :: proc() {
     player.camera_plane = rl.Vector2Rotate(player.direction, math.PI*0.5)
     world_size :: rl.Vector2 { grid_cols, grid_rows }
     grid_start :: rl.Vector2 { 0, 0 }
-    grid_end :: rl.Vector2 { 600, 600 }
+    grid_end :: rl.Vector2 { win_height/2, win_height/2 }
 
     worldmap: WorldMap
     worldmap.cells[0][0] = true
@@ -58,6 +58,7 @@ main :: proc() {
 
         rl.BeginDrawing()
             rl.ClearBackground(rl.RAYWHITE)
+            draw_player_view(&player, worldmap)
             draw_walls(grid_start, grid_end, worldmap)
             draw_grid(grid_start, grid_end)
             rl.DrawCircleV(screen_pos(grid_start, grid_end, player.pos, worldmap.size), player.size/f32(worldmap.size.x)*(grid_end.x-grid_start.x), rl.RED)
@@ -216,4 +217,22 @@ cast_ray_toward_point :: proc(p1, p2: rl.Vector2, worldmap: WorldMap) -> (hit: b
     
     hit_point = p1 + ray_direction * distance
     return hit, hit_point
+}
+
+draw_player_view :: proc(player: ^Player, worldmap: WorldMap) {
+    for x in 0..<win_width {
+        camera_x: f32 = 2*f32(x)/win_width - 1
+        ray_direction := player.pos + player.direction + player.camera_plane * camera_x
+        hit, hit_point := cast_ray_toward_point(player.pos, ray_direction, worldmap)
+        if hit {
+            distance := hit_point - player.pos
+            line_height := win_height / linalg.length(distance)
+            draw_start := -line_height / 2 + f32(win_height)/2
+            if draw_start < 0 do draw_start = 0
+            draw_end := line_height / 2 + f32(win_height)/2
+            if draw_end >= win_height do draw_end = win_height
+
+            rl.DrawLineEx({f32(x), draw_start}, {f32(x), draw_end}, 5, rl.BLUE)
+        }
+    }
 }
