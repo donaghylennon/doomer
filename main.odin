@@ -7,8 +7,8 @@ import "core:math"
 import "core:math/linalg"
 import rl "vendor:raylib"
 
-win_width  :: 1200
-win_height :: 800
+win_width  :: 1400
+win_height :: 900
 
 grid_cols :: 10
 grid_rows :: 10
@@ -30,6 +30,11 @@ main :: proc() {
     defer rl.CloseWindow()
     rl.SetTargetFPS(60)
     rl.SetExitKey(.Q)
+
+    wall_image := rl.LoadImage("res/stone-bricks.png")
+    wall_texture := rl.LoadTextureFromImage(wall_image)
+    rl.UnloadImage(wall_image)
+    defer rl.UnloadTexture(wall_texture)
 
     player := Player { { 5, 5 }, 0.1, { 0, -0.3 }, 0 }
     player.camera_plane = rl.Vector2Rotate(player.direction, math.PI*0.5)
@@ -53,12 +58,14 @@ main :: proc() {
         mouse_world_pos := world_pos(grid_start, grid_end, mouse_pos, world_size)
         if (rl.IsMouseButtonDown(rl.MouseButton.LEFT)) {
             world_pos := linalg.to_uint(mouse_world_pos)
-            worldmap.cells[world_pos.x][world_pos.y] = true
+            if mouse_world_pos.x < world_size.x && mouse_world_pos.y < world_size.y  {
+                worldmap.cells[world_pos.x][world_pos.y] = true
+            }
         }
 
         rl.BeginDrawing()
             rl.ClearBackground(rl.RAYWHITE)
-            draw_player_view(&player, worldmap)
+            draw_player_view(&player, worldmap, wall_texture)
             draw_walls(grid_start, grid_end, worldmap)
             draw_grid(grid_start, grid_end)
             rl.DrawCircleV(screen_pos(grid_start, grid_end, player.pos, worldmap.size), player.size/f32(worldmap.size.x)*(grid_end.x-grid_start.x), rl.RED)
@@ -67,7 +74,7 @@ main :: proc() {
             player_direction := screen_pos(grid_start, grid_end, player.pos + player.direction, worldmap.size)
             camera_plane := screen_pos(grid_start, grid_end, player.pos + player.direction + player.camera_plane, worldmap.size)
             neg_camera_plane := screen_pos(grid_start, grid_end, player.pos + player.direction - player.camera_plane, worldmap.size)
-            hit, hit_point := cast_ray_toward_point(player.pos, mouse_world_pos, worldmap)
+            hit, side, hit_point := raycast_hit_point(player.pos, mouse_world_pos, worldmap)
             screen_hit_point := screen_pos(grid_start, grid_end, hit_point, world_size)
             rl.DrawCircleV(screen_hit_point, 5, rl.YELLOW)
             rl.DrawLineV(player_pos, screen_hit_point, rl.BLACK)
@@ -169,7 +176,7 @@ ray_step :: proc(p1, p2: rl.Vector2) -> rl.Vector2 {
     return {}
 }
 
-cast_ray_toward_point :: proc(p1, p2: rl.Vector2, worldmap: WorldMap) -> (hit: bool, hit_point: rl.Vector2) {
+raycast_hit_point :: proc(p1, p2: rl.Vector2, worldmap: WorldMap) -> (hit: bool, x_side: bool, hit_point: rl.Vector2) {
     ray_direction := linalg.normalize(p2 - p1)
     current_cell := linalg.to_int(p1)
     ray_unit_step_size := rl.Vector2 { math.sqrt(1 + (ray_direction.y / ray_direction.x) * (ray_direction.y / ray_direction.x)),
@@ -198,10 +205,12 @@ cast_ray_toward_point :: proc(p1, p2: rl.Vector2, worldmap: WorldMap) -> (hit: b
     hit = false
     for !hit && distance < max_distance {
         if ray_lengths_1D.x < ray_lengths_1D.y {
+            x_side = true
             current_cell.x += step.x
             distance = ray_lengths_1D.x
             ray_lengths_1D.x += ray_unit_step_size.x
         } else {
+            x_side = false
             current_cell.y += step.y
             distance = ray_lengths_1D.y
             ray_lengths_1D.y += ray_unit_step_size.y
@@ -216,23 +225,33 @@ cast_ray_toward_point :: proc(p1, p2: rl.Vector2, worldmap: WorldMap) -> (hit: b
     }
     
     hit_point = p1 + ray_direction * distance
-    return hit, hit_point
+    return hit, x_side, hit_point
 }
 
-draw_player_view :: proc(player: ^Player, worldmap: WorldMap) {
+draw_player_view :: proc(player: ^Player, worldmap: WorldMap, texture: rl.Texture) {
     for x in 0..<win_width {
         camera_x: f32 = 2*f32(x)/win_width - 1
         ray_direction := player.pos + player.direction + player.camera_plane * camera_x
-        hit, hit_point := cast_ray_toward_point(player.pos, ray_direction, worldmap)
+        hit, x_side, hit_point := raycast_hit_point(player.pos, ray_direction, worldmap)
         if hit {
-            distance := hit_point - player.pos
-            line_height := win_height / linalg.length(distance)
-            draw_start := -line_height / 2 + f32(win_height)/2
-            if draw_start < 0 do draw_start = 0
-            draw_end := line_height / 2 + f32(win_height)/2
-            if draw_end >= win_height do draw_end = win_height
+            perp_wall_distance := linalg.length(hit_point - (player.pos + player.camera_plane * camera_x))
+            max_distance := worldmap.size.x if worldmap.size.x > worldmap.size.y else worldmap.size.y
 
-            rl.DrawLineEx({f32(x), draw_start}, {f32(x), draw_end}, 5, rl.BLUE)
+            line_height := win_height / perp_wall_distance
+            draw_start := (win_height - line_height)*0.5
+            draw_end := draw_start + line_height
+
+            tex_x: f32
+            if x_side {
+                tex_x = (hit_point.y-math.floor(hit_point.y)) * f32(texture.width)
+            } else {
+                tex_x = (hit_point.x-math.floor(hit_point.x)) * f32(texture.width)
+            }
+            tex_start: f32 = 0
+            tex_end: f32 = f32(texture.height)
+            src_rect := rl.Rectangle { tex_x, tex_start, 1, tex_end }
+            dst_rect := rl.Rectangle { f32(x), draw_start, 1, draw_end-draw_start }
+            rl.DrawTexturePro(texture, src_rect, dst_rect, 0, 0, rl.RAYWHITE)
         }
     }
 }
