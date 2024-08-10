@@ -36,7 +36,7 @@ main :: proc() {
     rl.UnloadImage(wall_image)
     defer rl.UnloadTexture(wall_texture)
 
-    player := Player { { 5, 5 }, 0.1, { 0, -0.3 }, 0 }
+    player := Player { { 5, 5 }, 0.3, { 0, -0.3 }, 0 }
     player.camera_plane = rl.Vector2Rotate(player.direction, math.PI*0.5)
     world_size :: rl.Vector2 { grid_cols, grid_rows }
     grid_start :: rl.Vector2 { 0, 0 }
@@ -45,14 +45,7 @@ main :: proc() {
     worldmap: WorldMap
     worldmap.size = { grid_cols, grid_rows }
     generate_dungeon(grid_cols, grid_rows, &worldmap)
-    for i in 0..<len(worldmap.cells) {
-        for j in 0..<len(worldmap.cells[0]) {
-            if !worldmap.cells[i][j] {
-                player.pos = { f32(i), f32(j) }
-                break
-            }
-        }
-    }
+    init_player_pos(&player, worldmap)
 
     for !rl.WindowShouldClose() {
         dt := rl.GetFrameTime()
@@ -157,16 +150,46 @@ move_player :: proc(player: ^Player, worldmap: WorldMap, displacement: rl.Vector
     // than a small amount at a time
     new_pos := player.pos + displacement
     new_pos = {
-        clamp(new_pos.x, 0, worldmap.size.x),
-        clamp(new_pos.y, 0, worldmap.size.y)
+        clamp(new_pos.x, 0+player.size, worldmap.size.x-player.size),
+        clamp(new_pos.y, 0+player.size, worldmap.size.y-player.size)
     }
     flp := linalg.floor(new_pos)
-    if new_pos.x < worldmap.size.x && new_pos.y < worldmap.size.y {
-        cell: [2]uint = { uint(math.floor_f32(new_pos.x)), uint(math.floor_f32(new_pos.y)) }
-        if worldmap.cells[cell.x][cell.y] {
-            return
+    if displacement.x > 0 {
+        if displacement.y > 0 {
+            if new_pos.x + player.size < worldmap.size.x && new_pos.y + player.size < worldmap.size.y {
+                cell: [2]uint = { uint(math.floor_f32(new_pos.x + player.size)), uint(math.floor_f32(new_pos.y + player.size)) }
+                if worldmap.cells[cell.x][cell.y] {
+                    return
+                }
+                player.pos = new_pos
+            }
+        } else {
+            if new_pos.x + player.size < worldmap.size.x && new_pos.y - player.size < worldmap.size.y {
+                cell: [2]uint = { uint(math.floor_f32(new_pos.x + player.size)), uint(math.floor_f32(new_pos.y - player.size)) }
+                if worldmap.cells[cell.x][cell.y] {
+                    return
+                }
+                player.pos = new_pos
+            }
         }
-        player.pos = new_pos
+    } else {
+        if displacement.y > 0 {
+            if new_pos.x - player.size < worldmap.size.x && new_pos.y + player.size < worldmap.size.y {
+                cell: [2]uint = { uint(math.floor_f32(new_pos.x - player.size)), uint(math.floor_f32(new_pos.y + player.size)) }
+                if worldmap.cells[cell.x][cell.y] {
+                    return
+                }
+                player.pos = new_pos
+            }
+        } else {
+            if new_pos.x - player.size < worldmap.size.x && new_pos.y - player.size < worldmap.size.y {
+                cell: [2]uint = { uint(math.floor_f32(new_pos.x - player.size)), uint(math.floor_f32(new_pos.y - player.size)) }
+                if worldmap.cells[cell.x][cell.y] {
+                    return
+                }
+                player.pos = new_pos
+            }
+        }
     }
 }
 
@@ -351,6 +374,18 @@ generate_dungeon :: proc(x, y: uint, worldmap: ^WorldMap) {
                 }
                 worldmap.cells[c1.x][c1.y] = false
                 worldmap.cells[c2.x][c2.y] = false
+            }
+        }
+    }
+}
+
+init_player_pos :: proc(player: ^Player, worldmap: WorldMap) {
+    // TODO: remove this and init from dungeon generation
+    for i in 0..<len(worldmap.cells) {
+        for j in 0..<len(worldmap.cells[0]) {
+            if !worldmap.cells[i][j] {
+                player.pos = { f32(i), f32(j)+player.size+0.2 }
+                break
             }
         }
     }
