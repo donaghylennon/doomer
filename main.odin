@@ -10,8 +10,8 @@ import rl "vendor:raylib"
 win_width  :: 1400
 win_height :: 900
 
-grid_cols :: 10
-grid_rows :: 10
+grid_cols :: 60
+grid_rows :: 40
 
 Player :: struct {
     pos: rl.Vector2,
@@ -43,13 +43,16 @@ main :: proc() {
     grid_end :: rl.Vector2 { win_height/2, win_height/2 }
 
     worldmap: WorldMap
-    worldmap.cells[0][0] = true
-    worldmap.cells[1][0] = true
-    worldmap.cells[5][0] = true
-    worldmap.cells[0][1] = true
-    worldmap.cells[0][grid_rows-1] = true
-    worldmap.cells[grid_cols-1][0] = true
     worldmap.size = { grid_cols, grid_rows }
+    generate_dungeon(grid_cols, grid_rows, &worldmap)
+    for i in 0..<len(worldmap.cells) {
+        for j in 0..<len(worldmap.cells[0]) {
+            if !worldmap.cells[i][j] {
+                player.pos = { f32(i), f32(j) }
+                break
+            }
+        }
+    }
 
     for !rl.WindowShouldClose() {
         dt := rl.GetFrameTime()
@@ -252,6 +255,103 @@ draw_player_view :: proc(player: ^Player, worldmap: WorldMap, texture: rl.Textur
             src_rect := rl.Rectangle { tex_x, tex_start, 1, tex_end }
             dst_rect := rl.Rectangle { f32(x), draw_start, 1, draw_end-draw_start }
             rl.DrawTexturePro(texture, src_rect, dst_rect, 0, 0, rl.RAYWHITE)
+        }
+    }
+}
+
+DungeonRoom :: struct {
+    startx: i32,
+    starty: i32,
+    width: i32,
+    height: i32
+}
+
+generate_dungeon :: proc(x, y: uint, worldmap: ^WorldMap) {
+    n, m: uint = 3, 2
+    sector_width := x/n
+    sector_height := y/m
+
+    for i in 0..<x {
+        for j in 0..<y {
+            worldmap.cells[i][j] = true
+        }
+    }
+
+    rooms := make(map[[2]uint]DungeonRoom)
+    defer delete(rooms)
+
+    for i in 0..<n {
+        for j in 0..<m {
+            sector_startx:= i32(i * sector_width)
+            sector_starty:= i32(j * sector_height)
+            room_width := rl.GetRandomValue(3, i32(sector_width-2))
+            room_height := rl.GetRandomValue(3, i32(sector_height-2))
+            startx := sector_startx + rl.GetRandomValue(2, i32(sector_width)-2-room_width)
+            starty := sector_starty + rl.GetRandomValue(2, i32(sector_height)-2-room_height)
+            rooms[{i,j}] = DungeonRoom {startx, starty, room_width, room_height}
+            for s in startx..<startx+room_width {
+                for t in starty..<starty+room_height {
+                    worldmap.cells[s][t] = false
+                }
+            }
+        }
+    }
+
+    for i in 0..<n {
+        for j in 0..<m {
+            room := rooms[{i,j}]
+            if i + 1 < n {
+                adjacent := rooms[{i+1,j}]
+                x1 := room.startx + room.width
+                x2 := adjacent.startx
+                c1 := [2]i32 { rl.GetRandomValue(x1+1, x2-1), rl.GetRandomValue(room.starty+1, room.starty+room.height-1) }
+                c2 := [2]i32 { rl.GetRandomValue(x1+1, x2-1), rl.GetRandomValue(adjacent.starty+1, adjacent.starty+adjacent.height-1) }
+                if c1.x > c2.x {
+                    temp := c1.x
+                    c1.x = c2.x
+                    c2.x = temp
+                }
+                for x in x1..=c1.x {
+                    worldmap.cells[x][c1.y] = false
+                }
+                miny, maxy : i32
+                if c1.y < c2.y do miny, maxy = c1.y, c2.y
+                else do miny, maxy = c2.y, c1.y
+                for y in miny..=maxy {
+                    worldmap.cells[c1.x][y] = false
+                }
+                for x in c1.x..=x2 {
+                    worldmap.cells[x][c2.y] = false
+                }
+                worldmap.cells[c1.x][c1.y] = false
+                worldmap.cells[c2.x][c2.y] = false
+            }
+            if j + 1 < m {
+                adjacent := rooms[{i,j+1}]
+                y1 := room.starty + room.height
+                y2 := adjacent.starty
+                c1 := [2]i32 { rl.GetRandomValue(room.startx+1, room.startx+room.width-1), rl.GetRandomValue(y1+1, y2-1) }
+                c2 := [2]i32 { rl.GetRandomValue(adjacent.startx+1, adjacent.startx+adjacent.width-1), rl.GetRandomValue(y1+1, y2-1) }
+                if c1.y > c2.y {
+                    temp := c1.y
+                    c1.y = c2.y
+                    c2.y = temp
+                }
+                for y in y1..=c1.y {
+                    worldmap.cells[c1.x][y] = false
+                }
+                minx, maxx : i32
+                if c1.x < c2.x do minx, maxx = c1.x, c2.x
+                else do minx, maxx = c2.x, c1.x
+                for x in minx..=maxx {
+                    worldmap.cells[x][c1.y] = false
+                }
+                for y in c1.y..=y2 {
+                    worldmap.cells[c2.x][y] = false
+                }
+                worldmap.cells[c1.x][c1.y] = false
+                worldmap.cells[c2.x][c2.y] = false
+            }
         }
     }
 }
