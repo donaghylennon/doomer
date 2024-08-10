@@ -268,16 +268,19 @@ draw_player_view :: proc(player: ^Player, worldmap: WorldMap, texture: rl.Textur
             draw_end := draw_start + line_height
 
             tex_x: f32
+            highlight: rl.Color
             if x_side {
                 tex_x = (hit_point.y-math.floor(hit_point.y)) * f32(texture.width)
+                highlight = rl.RAYWHITE
             } else {
                 tex_x = (hit_point.x-math.floor(hit_point.x)) * f32(texture.width)
+                highlight = rl.GRAY
             }
             tex_start: f32 = 0
             tex_end: f32 = f32(texture.height)
             src_rect := rl.Rectangle { tex_x, tex_start, 1, tex_end }
             dst_rect := rl.Rectangle { f32(x), draw_start, 1, draw_end-draw_start }
-            rl.DrawTexturePro(texture, src_rect, dst_rect, 0, 0, rl.RAYWHITE)
+            rl.DrawTexturePro(texture, src_rect, dst_rect, 0, 0, highlight)
         }
     }
 }
