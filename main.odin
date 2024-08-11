@@ -41,9 +41,6 @@ main :: proc() {
 
     player := Player { { 5, 5 }, 0.3, { 0, -0.3 }, 0 }
     player.camera_plane = rl.Vector2Rotate(player.direction, math.PI*0.5)
-    world_size :: rl.Vector2 { grid_cols, grid_rows }
-    grid_start :: rl.Vector2 { 0, 0 }
-    grid_end :: rl.Vector2 { win_height/2, win_height/2 }
 
     worldmap: WorldMap
     worldmap.size = { grid_cols, grid_rows }
@@ -53,35 +50,7 @@ main :: proc() {
     for !rl.WindowShouldClose() {
         dt := rl.GetFrameTime()
         handle_input(&player, worldmap, dt)
-        mouse_pos := rl.GetMousePosition()
-        mouse_world_pos := world_pos(grid_start, grid_end, mouse_pos, world_size)
-        if (rl.IsMouseButtonDown(rl.MouseButton.LEFT)) {
-            world_pos := linalg.to_uint(mouse_world_pos)
-            if mouse_world_pos.x < world_size.x && mouse_world_pos.y < world_size.y  {
-                worldmap.cells[world_pos.x][world_pos.y] = true
-            }
-        }
-
-        rl.BeginDrawing()
-            rl.ClearBackground(rl.RAYWHITE)
-            draw_player_view(&player, worldmap, wall_texture, floor_image)
-            draw_walls(grid_start, grid_end, worldmap)
-            draw_grid(grid_start, grid_end)
-            rl.DrawCircleV(screen_pos(grid_start, grid_end, player.pos, worldmap.size), player.size/f32(worldmap.size.x)*(grid_end.x-grid_start.x), rl.RED)
-            rl.DrawCircleV(mouse_pos, 0.1*rl.Vector2Length(grid_end - grid_start)/rl.Vector2Length(worldmap.size), rl.BLUE)
-            player_pos := screen_pos(grid_start, grid_end, player.pos, worldmap.size)
-            player_direction := screen_pos(grid_start, grid_end, player.pos + player.direction, worldmap.size)
-            camera_plane := screen_pos(grid_start, grid_end, player.pos + player.direction + player.camera_plane, worldmap.size)
-            neg_camera_plane := screen_pos(grid_start, grid_end, player.pos + player.direction - player.camera_plane, worldmap.size)
-            hit, side, hit_point := raycast_hit_point(player.pos, mouse_world_pos, worldmap)
-            screen_hit_point := screen_pos(grid_start, grid_end, hit_point, world_size)
-            rl.DrawCircleV(screen_hit_point, 5, rl.YELLOW)
-            rl.DrawLineV(player_pos, screen_hit_point, rl.BLACK)
-            rl.DrawLineEx(player_pos, camera_plane, 5, rl.PURPLE)
-            rl.DrawLineEx(player_pos, neg_camera_plane, 5, rl.PURPLE)
-            rl.DrawLineEx(neg_camera_plane, camera_plane, 5, rl.PURPLE)
-            rl.DrawText(rl.TextFormat("%v", rl.GetFPS()), 10, 10, 20, rl.LIGHTGRAY)
-        rl.EndDrawing()
+        render(player, worldmap, wall_texture, floor_image)
     }
 }
 
@@ -98,36 +67,6 @@ screen_size :: proc(start_pos, end_pos, world_size, size: rl.Vector2) -> rl.Vect
 world_pos :: proc(start_pos, end_pos, screen_pos, world_size: rl.Vector2) -> rl.Vector2 {
     screen_lengths := end_pos - start_pos
     return (screen_pos - start_pos) / screen_lengths * world_size
-}
-
-draw_walls :: proc(grid_start, grid_end: rl.Vector2, worldmap: WorldMap) {
-    for x in 0..<uint(worldmap.size.x) {
-        for y in 0..<uint(worldmap.size.y) {
-            if worldmap.cells[x][y] {
-                cell_start := rl.Vector2{f32(x),f32(y)}
-                cell_end := rl.Vector2{f32(x+1),f32(y+1)}
-                cell_start_screen := screen_pos(grid_start, grid_end, cell_start, worldmap.size)
-                cell_size_screen := screen_size(grid_start, grid_end, worldmap.size, 1)
-                rl.DrawRectangleV(cell_start_screen, cell_size_screen, rl.BLUE)
-            }
-        }
-    }
-}
-
-draw_grid :: proc(start_pos, end_pos: rl.Vector2) {
-    lengths := end_pos - start_pos
-    for col in 0..=grid_cols {
-        x := start_pos.x + f32(col)*lengths.x/grid_cols
-        line_start := rl.Vector2 { x, start_pos.y }
-        line_end := rl.Vector2 { x, end_pos.y }
-        rl.DrawLineV(line_start, line_end, rl.BLACK)
-    }
-    for row in 0..=grid_rows {
-        y := start_pos.y + f32(row)*lengths.y/grid_rows 
-        line_start := rl.Vector2 { start_pos.x, y }
-        line_end := rl.Vector2 { end_pos.x, y }
-        rl.DrawLineV(line_start, line_end, rl.BLACK)
-    }
 }
 
 handle_input :: proc(player: ^Player, worldmap: WorldMap, dt: f32) {
@@ -255,71 +194,6 @@ raycast_hit_point :: proc(p1, p2: rl.Vector2, worldmap: WorldMap) -> (hit: bool,
     
     hit_point = p1 + ray_direction * distance
     return hit, x_side, hit_point
-}
-
-draw_player_view :: proc(player: ^Player, worldmap: WorldMap, wall_texture: rl.Texture, floor_image: rl.Image) {
-    line_image := rl.GenImageColor(win_width, win_height, rl.RAYWHITE)
-    defer rl.UnloadImage(line_image)
-    for y in 0..<win_height {
-        left_ray_direction := player.direction - player.camera_plane
-        right_ray_direction := player.direction + player.camera_plane
-
-        relative_screen_row := y - win_height/2
-        camera_pos: f32 = win_height * 0.5
-
-        row_distance: f32
-        if relative_screen_row != 0 {
-            row_distance = camera_pos / f32(relative_screen_row)
-        } else {
-            row_distance = math.F32_MAX
-        }
-
-        floor_step := row_distance * (right_ray_direction - left_ray_direction) / win_width
-        floor_pos := player.pos + row_distance*left_ray_direction
-
-        for x in 0..<win_width {
-            cell := linalg.floor(floor_pos)
-            tex_x := i32(f32(floor_image.width) * (floor_pos.x - cell.x))
-            tex_y := i32(f32(floor_image.height) * (floor_pos.y - cell.y))
-
-            floor_pos += floor_step
-            color := rl.GetImageColor(floor_image, tex_x, tex_y)
-            rl.ImageDrawPixel(&line_image, i32(x), i32(y), color)
-            //rl.DrawPixel(i32(x), i32(y), color)
-        }
-    }
-    tex := rl.LoadTextureFromImage(line_image)
-    rl.DrawTexturePro(tex, {0, 0, f32(tex.width), f32(tex.height)}, {0,0, win_width, win_height}, 0, 0, rl.RAYWHITE)
-    //rl.UnloadTexture(tex)
-
-    for x in 0..<win_width {
-        camera_x: f32 = 2*f32(x)/win_width - 1
-        ray_direction := player.pos + player.direction + player.camera_plane * camera_x
-        hit, x_side, hit_point := raycast_hit_point(player.pos, ray_direction, worldmap)
-        if hit {
-            perp_wall_distance := linalg.length(hit_point - (player.pos + player.camera_plane * camera_x))
-            max_distance := worldmap.size.x if worldmap.size.x > worldmap.size.y else worldmap.size.y
-
-            line_height := win_height / perp_wall_distance
-            draw_start := (win_height - line_height)*0.5
-            draw_end := draw_start + line_height
-
-            tex_x: f32
-            highlight: rl.Color
-            if x_side {
-                tex_x = (hit_point.y-math.floor(hit_point.y)) * f32(wall_texture.width)
-                highlight = rl.RAYWHITE
-            } else {
-                tex_x = (hit_point.x-math.floor(hit_point.x)) * f32(wall_texture.width)
-                highlight = rl.GRAY
-            }
-            tex_start: f32 = 0
-            tex_end: f32 = f32(wall_texture.height)
-            src_rect := rl.Rectangle { tex_x, tex_start, 1, tex_end }
-            dst_rect := rl.Rectangle { f32(x), draw_start, 1, draw_end-draw_start }
-            rl.DrawTexturePro(wall_texture, src_rect, dst_rect, 0, 0, highlight)
-        }
-    }
 }
 
 DungeonRoom :: struct {
