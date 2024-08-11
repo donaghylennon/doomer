@@ -33,8 +33,11 @@ main :: proc() {
 
     wall_image := rl.LoadImage("res/stone-bricks.png")
     wall_texture := rl.LoadTextureFromImage(wall_image)
-    rl.UnloadImage(wall_image)
+    defer rl.UnloadImage(wall_image)
     defer rl.UnloadTexture(wall_texture)
+
+    floor_image := rl.LoadImage("res/wooden-floor.png")
+    defer rl.UnloadImage(floor_image)
 
     player := Player { { 5, 5 }, 0.3, { 0, -0.3 }, 0 }
     player.camera_plane = rl.Vector2Rotate(player.direction, math.PI*0.5)
@@ -61,7 +64,7 @@ main :: proc() {
 
         rl.BeginDrawing()
             rl.ClearBackground(rl.RAYWHITE)
-            draw_player_view(&player, worldmap, wall_texture)
+            draw_player_view(&player, worldmap, wall_texture, floor_image)
             draw_walls(grid_start, grid_end, worldmap)
             draw_grid(grid_start, grid_end)
             rl.DrawCircleV(screen_pos(grid_start, grid_end, player.pos, worldmap.size), player.size/f32(worldmap.size.x)*(grid_end.x-grid_start.x), rl.RED)
@@ -254,7 +257,41 @@ raycast_hit_point :: proc(p1, p2: rl.Vector2, worldmap: WorldMap) -> (hit: bool,
     return hit, x_side, hit_point
 }
 
-draw_player_view :: proc(player: ^Player, worldmap: WorldMap, texture: rl.Texture) {
+draw_player_view :: proc(player: ^Player, worldmap: WorldMap, wall_texture: rl.Texture, floor_image: rl.Image) {
+    line_image := rl.GenImageColor(win_width, win_height, rl.RAYWHITE)
+    defer rl.UnloadImage(line_image)
+    for y in 0..<win_height {
+        left_ray_direction := player.direction - player.camera_plane
+        right_ray_direction := player.direction + player.camera_plane
+
+        relative_screen_row := y - win_height/2
+        camera_pos: f32 = win_height * 0.5
+
+        row_distance: f32
+        if relative_screen_row != 0 {
+            row_distance = camera_pos / f32(relative_screen_row)
+        } else {
+            row_distance = math.F32_MAX
+        }
+
+        floor_step := row_distance * (right_ray_direction - left_ray_direction) / win_width
+        floor_pos := player.pos + row_distance*left_ray_direction
+
+        for x in 0..<win_width {
+            cell := linalg.floor(floor_pos)
+            tex_x := i32(f32(floor_image.width) * (floor_pos.x - cell.x))
+            tex_y := i32(f32(floor_image.height) * (floor_pos.y - cell.y))
+
+            floor_pos += floor_step
+            color := rl.GetImageColor(floor_image, tex_x, tex_y)
+            rl.ImageDrawPixel(&line_image, i32(x), i32(y), color)
+            //rl.DrawPixel(i32(x), i32(y), color)
+        }
+    }
+    tex := rl.LoadTextureFromImage(line_image)
+    rl.DrawTexturePro(tex, {0, 0, f32(tex.width), f32(tex.height)}, {0,0, win_width, win_height}, 0, 0, rl.RAYWHITE)
+    //rl.UnloadTexture(tex)
+
     for x in 0..<win_width {
         camera_x: f32 = 2*f32(x)/win_width - 1
         ray_direction := player.pos + player.direction + player.camera_plane * camera_x
@@ -270,17 +307,17 @@ draw_player_view :: proc(player: ^Player, worldmap: WorldMap, texture: rl.Textur
             tex_x: f32
             highlight: rl.Color
             if x_side {
-                tex_x = (hit_point.y-math.floor(hit_point.y)) * f32(texture.width)
+                tex_x = (hit_point.y-math.floor(hit_point.y)) * f32(wall_texture.width)
                 highlight = rl.RAYWHITE
             } else {
-                tex_x = (hit_point.x-math.floor(hit_point.x)) * f32(texture.width)
+                tex_x = (hit_point.x-math.floor(hit_point.x)) * f32(wall_texture.width)
                 highlight = rl.GRAY
             }
             tex_start: f32 = 0
-            tex_end: f32 = f32(texture.height)
+            tex_end: f32 = f32(wall_texture.height)
             src_rect := rl.Rectangle { tex_x, tex_start, 1, tex_end }
             dst_rect := rl.Rectangle { f32(x), draw_start, 1, draw_end-draw_start }
-            rl.DrawTexturePro(texture, src_rect, dst_rect, 0, 0, highlight)
+            rl.DrawTexturePro(wall_texture, src_rect, dst_rect, 0, 0, highlight)
         }
     }
 }
