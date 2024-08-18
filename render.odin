@@ -6,7 +6,7 @@ import rl "vendor:raylib"
 
 render :: proc(player: Player, worldmap: WorldMap, wall_texture: rl.Texture, floor_image: rl.Image) {
     grid_start :: rl.Vector2 { 0, 0 }
-    grid_end :: rl.Vector2 { win_height/2, win_height/2 }
+    grid_end :: rl.Vector2 { win_height/3, win_height/3 }
 
     rl.BeginDrawing()
         rl.ClearBackground(rl.RAYWHITE)
@@ -56,46 +56,22 @@ draw_walls :: proc(grid_start, grid_end: rl.Vector2, worldmap: WorldMap) {
 }
 
 draw_player_view :: proc(width, height: i32, player: Player, worldmap: WorldMap, wall_texture: rl.Texture, floor_image: rl.Image) {
-    line_image := rl.GenImageColor(width, height, rl.RAYWHITE)
-    defer rl.UnloadImage(line_image)
     for y in 0..<height {
-        left_ray_direction := player.direction - player.camera_plane
-        right_ray_direction := player.direction + player.camera_plane
-
-        relative_screen_row := y - height/2
-        camera_pos: f32 = f32(height) * 0.5
-
-        row_distance: f32
-        if relative_screen_row != 0 {
-            row_distance = camera_pos / f32(relative_screen_row)
-        } else {
-            row_distance = math.F32_MAX
-        }
-
-        floor_step := row_distance * (right_ray_direction - left_ray_direction) / f32(width)
-        floor_pos := player.pos + row_distance*left_ray_direction
-
-        for x in 0..<width {
-            cell := linalg.floor(floor_pos)
-            tex_x := i32(f32(floor_image.width) * (floor_pos.x - cell.x))
-            tex_y := i32(f32(floor_image.height) * (floor_pos.y - cell.y))
-
-            floor_pos += floor_step
-            color := rl.GetImageColor(floor_image, tex_x, tex_y)
-            rl.ImageDrawPixel(&line_image, i32(x), i32(y), color)
-            //rl.DrawPixel(i32(x), i32(y), color)
-        }
+        bg_color: rl.Color
+        gradient_color := u8(255 - math.abs((255 *y / height) - 255/2))
+        bg_color.r = gradient_color
+        bg_color.g = gradient_color
+        bg_color.b = gradient_color
+        bg_color.a = 255
+        rl.DrawLineV({0, f32(y)}, {f32(width), f32(y)}, bg_color)
     }
-    tex := rl.LoadTextureFromImage(line_image)
-    rl.DrawTexturePro(tex, {0, 0, f32(tex.width), f32(tex.height)}, {0,0, f32(width), f32(height)}, 0, 0, rl.RAYWHITE)
-    //rl.UnloadTexture(tex)
 
     for x in 0..<width {
         camera_x: f32 = 2*f32(x)/f32(width) - 1
         ray_direction := player.pos + player.direction + player.camera_plane * camera_x
         hit, x_side, hit_point := raycast_hit_point(player.pos, ray_direction, worldmap)
         if hit {
-            perp_wall_distance := linalg.length(hit_point - (player.pos + player.camera_plane * camera_x))
+            perp_wall_distance := linalg.length(hit_point - player.pos) * math.cos(rl.Vector2Angle(player.direction, player.direction+player.camera_plane*camera_x))
             max_distance := worldmap.size.x if worldmap.size.x > worldmap.size.y else worldmap.size.y
 
             line_height := f32(height) / perp_wall_distance

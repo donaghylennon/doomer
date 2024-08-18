@@ -72,7 +72,7 @@ world_pos :: proc(start_pos, end_pos, screen_pos, world_size: rl.Vector2) -> rl.
 handle_input :: proc(player: ^Player, worldmap: WorldMap, dt: f32) {
     world_size: [2]uint = linalg.to_uint(worldmap.size)
     speed: f32 = 10
-    rot_speed: f32 = 1
+    rot_speed: f32 = 0.75
     if rl.IsKeyDown(.A) {
         rotate_player(player, worldmap, -rot_speed*dt*math.PI)
     }
